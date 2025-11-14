@@ -1,0 +1,211 @@
+{% extends "base.html" %}
+
+{% block title %}Question {{ progress.current }} of {{ progress.total }}{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h3>Question {{ progress.current }} of {{ progress.total }}</h3>
+    <div class="text-end">
+        <small class="text-muted">Category: {{ questionnaire.categories[question.category] }}</small>
+    </div>
+</div>
+
+<div class="progress mb-4">
+    <div class="progress-bar progress-custom" role="progressbar"
+         style="width: {{ progress.percentage }}%; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);"
+         aria-valuenow="{{ progress.percentage }}" aria-valuemin="0" aria-valuemax="100">
+        {{ progress.percentage }}%
+    </div>
+</div>
+
+<div class="card mb-4">
+    <div class="card-body">
+        <h4 class="card-title mb-4">{{ question.question_text }}</h4>
+
+        <div id="options-container">
+            {% for option in question.options %}
+            <div class="option-card" data-option-id="{{ option.id }}" {% if option.custom_input %}data-custom-input="true"{% endif %}>
+                <div class="form-check">
+                    <input class="form-check-input" type="radio" name="question_{{ question.id }}"
+                           id="option_{{ option.id }}" value="{{ option.id }}"
+                           {% if responses[question.id] and responses[question.id].option_id == option.id %}checked{% endif %}>
+                    <label class="form-check-label" for="option_{{ option.id }}">
+                        <strong>{{ loop.index | ordinal }}.</strong>
+                        {% if option.text %}
+                            {{ option.text }}
+                        {% else %}
+                            <em>Other (please specify)</em>
+                        {% endif %}
+                    </label>
+                </div>
+
+                {% if option.custom_input %}
+                <div class="custom-input-container mt-2 ms-4" style="display: none;">
+                    <input type="text" class="form-control form-control-sm custom-text-input"
+                           placeholder="Please specify..."
+                           {% if responses[question.id] and responses[question.id].custom_text %}value="{{ responses[question.id].custom_text }}"{% endif %}>
+                </div>
+                {% endif %}
+            </div>
+            {% endfor %}
+        </div>
+
+        <div class="mt-4 d-flex justify-content-between">
+            {% if question_idx > 0 %}
+            <a href="{{ url_for('prev_question', current_idx=question_idx) }}" class="btn btn-outline-secondary">
+                <i class="fas fa-arrow-left"></i> Previous
+            </a>
+            {% else %}
+            <span></span>
+            {% endif %}
+
+            <button type="button" class="btn btn-primary-custom" id="next-button" disabled>
+                {% if question_idx == progress.total - 1 %}
+                    Complete Assessment <i class="fas fa-check"></i>
+                {% else %}
+                    Next <i class="fas fa-arrow-right"></i>
+                {% endif %}
+            </button>
+        </div>
+    </div>
+</div>
+
+<div class="ai-guidance">
+    <h5><i class="fas fa-robot"></i> AI Guidance</h5>
+    <p class="mb-0" id="ai-guidance-text">
+        <i class="fas fa-spinner fa-spin"></i> Loading insights...
+    </p>
+</div>
+
+<div class="text-center mt-4">
+    <button class="btn btn-sm btn-outline-primary" id="save-exit-button">
+        <i class="fas fa-save"></i> Save & Exit (Complete Later)
+    </button>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+// Handle option selection
+document.addEventListener('DOMContentLoaded', function() {
+    const optionsContainer = document.getElementById('options-container');
+    const nextButton = document.getElementById('next-button');
+    const questionId = '{{ question.id }}';
+    const questionIdx = {{ question_idx }};
+    const totalQuestions = {{ progress.total }};
+
+    // Load AI guidance
+    fetch(`/api/guidance/${questionId}`)
+        .then(response => response.json())
+        .then(data => {
+            document.getElementById('ai-guidance-text').innerHTML = data.guidance;
+        })
+        .catch(error => {
+            document.getElementById('ai-guidance-text').innerHTML =
+                'This question helps us understand your current workflow and identify optimization opportunities.';
+        });
+
+    // Handle option selection
+    optionsContainer.addEventListener('change', function(e) {
+        if (e.target.type === 'radio') {
+            const selectedOptionId = e.target.value;
+            const selectedCard = e.target.closest('.option-card');
+            const isCustomInput = selectedCard.dataset.customInput === 'true';
+
+            // Update visual selection
+            document.querySelectorAll('.option-card').forEach(card => {
+                card.classList.remove('selected');
+            });
+            selectedCard.classList.add('selected');
+
+            // Show/hide custom input
+            document.querySelectorAll('.custom-input-container').forEach(container => {
+                container.style.display = 'none';
+            });
+
+            if (isCustomInput) {
+                const customInput = selectedCard.querySelector('.custom-input-container');
+                if (customInput) {
+                    customInput.style.display = 'block';
+                    customInput.querySelector('input').focus();
+                }
+            }
+
+            // Enable next button
+            nextButton.disabled = false;
+
+            // Save response
+            const customText = isCustomInput ?
+                selectedCard.querySelector('.custom-text-input').value : '';
+
+            saveResponse(questionId, selectedOptionId, customText);
+        }
+    });
+
+    // Handle custom input changes
+    optionsContainer.addEventListener('input', function(e) {
+        if (e.target.classList.contains('custom-text-input')) {
+            const selectedCard = e.target.closest('.option-card');
+            const selectedOption = selectedCard.querySelector('input[type="radio"]');
+
+            if (selectedOption.checked) {
+                saveResponse(questionId, selectedOption.value, e.target.value);
+            }
+        }
+    });
+
+    // Handle next button
+    nextButton.addEventListener('click', function() {
+        if (questionIdx === totalQuestions - 1) {
+            window.location.href = '{{ url_for("complete") }}';
+        } else {
+            window.location.href = '{{ url_for("next_question", current_idx=question_idx) }}';
+        }
+    });
+
+    // Handle save and exit
+    document.getElementById('save-exit-button').addEventListener('click', function() {
+        fetch('/save_and_exit', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'}
+        })
+        .then(response => response.json())
+        .then(data => {
+            alert(data.message);
+            window.location.href = '/';
+        });
+    });
+
+    // Load saved response
+    const savedResponse = {{ responses[question.id]|tojson if question.id in responses else 'null' }};
+    if (savedResponse) {
+        const savedOption = document.querySelector(`input[value="${savedResponse.option_id}"]`);
+        if (savedOption) {
+            savedOption.checked = true;
+            savedOption.dispatchEvent(new Event('change', { bubbles: true }));
+
+            if (savedResponse.custom_text) {
+                const customInput = document.querySelector('.custom-text-input');
+                if (customInput) {
+                    customInput.value = savedResponse.custom_text;
+                }
+            }
+        }
+    }
+});
+
+function saveResponse(questionId, optionId, customText) {
+    fetch('/save_response', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+            question_id: questionId,
+            option_id: optionId,
+            custom_text: customText
+        })
+    });
+}
+</script>
+{% endblock %}
