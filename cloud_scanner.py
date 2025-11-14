@@ -289,7 +289,7 @@ class CloudScanner:
                 'title': 'Review external sharing permissions',
                 'description': f"{len(shared_files)} files are shared externally. Review and revoke unnecessary shares.",
                 'estimated_time_savings_hours_per_week': 0,
-                'implementation_time": "1-2 hours',
+                'implementation_time': '1-2 hours',
                 'difficulty': 'easy'
             })
 
