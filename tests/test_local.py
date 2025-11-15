@@ -4,6 +4,10 @@ Local test script for Lawyer Practice Optimization Diagnostic
 Tests the application without sending emails.
 """
 
+import sys
+import os
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'src'))
+
 from diagnostic_questions import diagnostic_questionnaire
 from analyzer import practice_analyzer
 
